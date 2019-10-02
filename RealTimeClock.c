@@ -91,7 +91,6 @@
 char demuxSelect[]={0b00000000, 0b00000001, 0b00000010, 0b00000011};
 char demuxData[]={0xFF, 0xFF, 0xFF, 0xFF};
 
-char testData[]={0b01111111,0b10111111,0b11011111,0b11101111,0b11110111,0b11111011,0b11111101,0b11111110};
 char numbersData[]={ 0b11000000 /*0*/ ,0b11111001 /*1*/, 0b10100100  /*2*/,0b10110000 /*3*/,0b10011001 /*4*/,0b10010010 /*5*/,0b10000010 /*6*/,0b11111000 /*7*/,0b10000000 /*8*/,0b10010000 /*9*/};
 int numbersValue[]={0,0,0,0};
 
@@ -101,9 +100,9 @@ char selectDot[]={0b11111111, 0b01111111};
 char dotSelector[]={false,true,false,false};
 
 int indexer=0;
-int seconds=0,mins=44,hours=13,counter=0;
-int counter_value=1000/(DEMUX_DELAY_uS+16+8);
-bit lock=false;
+unsigned int seconds=19,mins=55,hours=10,counter_ms=0, counter_us=0;
+unsigned int timeCorrect=0;
+unsigned int counter_value=1000/(DEMUX_DELAY_uS);
 
 void Init(){
     OSCCON=0b01011100; //osc setting, 4 MHz, internal by FOSCH
@@ -115,7 +114,7 @@ void Init(){
     WPUBbits.WPUB2=1;
     WPUBbits.WPUB3=1;
     
-    T0CON=0b01000011; //timer0 setting, PS 1/16 * 2 (FOST/4) 16us
+    T0CON=0b01000011; //timer0 setting, PS 1/16 * 2 (FOST/4) 128us
     T1CON=0b01110010; //timer1 setting, PS 1/8 * 1 (FOST/4) 8us
     
     ANSELD=0;
@@ -152,9 +151,10 @@ void TestDevice(){
         PORTD=0xFF;
         __delay_ms(1);
         PORTE=demuxSelect[i];
-       
+        
+        PORTD=0b01111111;
         for(int j=0;j<testDataSize;j++){
-            PORTD=testData[j];
+            PORTD<<=1;
             __delay_ms(100);
         }
         PORTD=0x00;
@@ -219,22 +219,37 @@ void interrupt IRS(void){
     if(PIR1bits.TMR1IF){
         PIR1bits.TMR1IF=0;
         
-        parseValues(hours,mins);
-        if(!(counter%(counter_value/2)) && (counter>0))dotSelector[1]=!dotSelector[1];
-        if(!(counter%counter_value) && (counter>0)){
+        counter_us+=(8+timeCorrect+DEMUX_DELAY_uS); //Timer period+time corection delay+demux timer 0 delay
+        timeCorrect=0;
+        timeCorrect+=6;
+        
+        parseValues(mins,seconds);
+        
+        if(counter_us>=1000){
+            timeCorrect=counter_us=0;
+            counter_ms++;  
+        }
+        if(!(counter_ms%500) && (counter_ms>0))dotSelector[1]=!dotSelector[1];
+        timeCorrect+=1;
+        
+        if(!(counter_ms%1000) && (counter_ms>0)){
             seconds++;
-            counter=0;
+            counter_ms=0;
+            timeCorrect+=4;
         }
         if(!(seconds%60) && seconds!=0){
             mins++;
             seconds=0;
+            timeCorrect+=4;
         }
         if(!(mins%60) && mins!=0){
             hours++;
             mins=0;
+            timeCorrect+=4;
         }
         if(!(hours%24) && hours!=0){
             hours=0;
+            timeCorrect+=2;
         }
         
         for(int i=0;i<demuxSelectSize;i++){
@@ -243,7 +258,7 @@ void interrupt IRS(void){
             
             demuxData[i]=numbersData[numbersValue[i]];
             demuxData[i]&=selectDot[dotSelector[i]];
-        }
-        counter++;    
+            timeCorrect+=4;
+        }  
     }
 }
