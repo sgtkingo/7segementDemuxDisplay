@@ -114,7 +114,7 @@ void Init(){
     WPUBbits.WPUB2=1;
     WPUBbits.WPUB3=1;
     
-    T0CON=0b01000011; //timer0 setting, PS 1/16 * 2 (FOST/4) 128us
+    T0CON=0b01000011; //timer0 setting, PS 1/16 * 2 (FOST/4) 32us
     T1CON=0b01110010; //timer1 setting, PS 1/8 * 1 (FOST/4) 8us
     
     ANSELD=0;
@@ -136,6 +136,7 @@ void ClearDevice(){
     PORTD=1;
     DMX_A=DMX_B=0;
     indexer=0;
+    timeCorrect=0;
 }
 
 void TestDevice(){
@@ -215,41 +216,27 @@ void interrupt IRS(void){
          
          indexer++;
          if(indexer>=demuxSelectSize)indexer=0;
+         
+         timeCorrect+=100; //time correct for RTC
     }
     if(PIR1bits.TMR1IF){
         PIR1bits.TMR1IF=0;
         
-        counter_us+=(8+timeCorrect+DEMUX_DELAY_uS); //Timer period+time corection delay+demux timer 0 delay
-        timeCorrect=0;
-        timeCorrect+=6;
-        
-        parseValues(mins,seconds);
-        
-        if(counter_us>=1000){
-            timeCorrect=counter_us=0;
-            counter_ms++;  
-        }
-        if(!(counter_ms%500) && (counter_ms>0))dotSelector[1]=!dotSelector[1];
-        timeCorrect+=1;
-        
-        if(!(counter_ms%1000) && (counter_ms>0)){
+        if(!(counter_ms%(counter_value/2)) && (counter_ms>0))dotSelector[1]=!dotSelector[1];
+        if(!(counter_ms%counter_value) && (counter_ms>0)){
             seconds++;
             counter_ms=0;
-            timeCorrect+=4;
         }
         if(!(seconds%60) && seconds!=0){
             mins++;
             seconds=0;
-            timeCorrect+=4;
         }
         if(!(mins%60) && mins!=0){
             hours++;
             mins=0;
-            timeCorrect+=4;
         }
         if(!(hours%24) && hours!=0){
             hours=0;
-            timeCorrect+=2;
         }
         
         for(int i=0;i<demuxSelectSize;i++){
@@ -258,7 +245,8 @@ void interrupt IRS(void){
             
             demuxData[i]=numbersData[numbersValue[i]];
             demuxData[i]&=selectDot[dotSelector[i]];
-            timeCorrect+=4;
         }  
+        parseValues(mins,seconds);
+        counter_ms++;
     }
 }
