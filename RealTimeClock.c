@@ -85,8 +85,7 @@
 #define true 1
 #define false 0
 
-#define _XTAL_FREQ 4000000
-#define DEMUX_DELAY_uS 100
+#define _XTAL_FREQ 16000000
 
 char demuxSelect[]={0b00000000, 0b00000001, 0b00000010, 0b00000011};
 char demuxData[]={0xFF, 0xFF, 0xFF, 0xFF};
@@ -100,13 +99,12 @@ char selectDot[]={0b11111111, 0b01111111};
 char dotSelector[]={false,true,false,false};
 
 int indexer=0;
-unsigned int seconds=19,mins=55,hours=10,counter_ms=0, counter_us=0;
-unsigned int timeCorrect=0;
-unsigned int counter_value=1000/(DEMUX_DELAY_uS);
+unsigned int seconds=19,mins=55,hours=10,counter_ms=0;
 
 void Init(){
-    OSCCON=0b01011100; //osc setting, 4 MHz, internal by FOSCH
+    OSCCON=0b01111100; //osc setting, 16 MHz, internal by FOSCH
     INTCON=0b11100000; //int setting, global,pir, timer0
+    PIE5bits.TMR4IE=1; //timer4 int owerflow enable
     
     INTCON2bits.NOT_RBPU=1; //potrB pullup enable
     WPUBbits.WPUB0=1;
@@ -114,8 +112,10 @@ void Init(){
     WPUBbits.WPUB2=1;
     WPUBbits.WPUB3=1;
     
-    T0CON=0b01000011; //timer0 setting, PS 1/16 * 2 (FOST/4) 32us
-    T1CON=0b01110010; //timer1 setting, PS 1/8 * 1 (FOST/4) 8us
+    //TOCON control 7SEGMENT DISPLAY
+    T0CON=0b01000011; //timer0 setting, PS 1/16 * 2 (FOST/4) 
+    //T4CON control RTC
+    T4CON=0b00000011; //timer4 setting, POST-S 1/1, PS 1/16 (FOST/4) 
     
     ANSELD=0;
     TRISD=0;
@@ -136,7 +136,6 @@ void ClearDevice(){
     PORTD=1;
     DMX_A=DMX_B=0;
     indexer=0;
-    timeCorrect=0;
 }
 
 void TestDevice(){
@@ -188,42 +187,10 @@ void CheckButtons(){
     }
 }
 
-
-void main(void) {
-    Init();
-    ClearDevice();
-    TestDevice();
-    T0CONbits.TMR0ON=1;
-    T1CONbits.TMR1ON=1;
-    
-    while(1){
-        asm("NOP");
-        asm("CLRWDT");
-        //CheckButtons();
-        __delay_ms(250);        
-    }
-}
-
-void interrupt IRS(void){
-    if(INTCONbits.TMR0IF){
-        INTCONbits.TMR0IF=0;
-        
-        PORTD=0xFF;
-        PORTE=demuxSelect[indexer];
-        __delay_us(DEMUX_DELAY_uS);
-        
-        PORTD=demuxData[indexer];           
-         
-         indexer++;
-         if(indexer>=demuxSelectSize)indexer=0;
-         
-         timeCorrect+=100; //time correct for RTC
-    }
-    if(PIR1bits.TMR1IF){
-        PIR1bits.TMR1IF=0;
-        
-        if(!(counter_ms%(counter_value/2)) && (counter_ms>0))dotSelector[1]=!dotSelector[1];
-        if(!(counter_ms%counter_value) && (counter_ms>0)){
+void timeStep(){
+        counter_ms++;
+        if(!(counter_ms%(1000/2)) && (counter_ms>0))dotSelector[1]=!dotSelector[1];
+        if(!(counter_ms%1000) && (counter_ms>0)){
             seconds++;
             counter_ms=0;
         }
@@ -247,6 +214,41 @@ void interrupt IRS(void){
             demuxData[i]&=selectDot[dotSelector[i]];
         }  
         parseValues(mins,seconds);
-        counter_ms++;
+}
+
+
+void main(void) {
+    Init();
+    ClearDevice();
+    TestDevice();
+    T0CONbits.TMR0ON=1;
+    T4CONbits.TMR4ON=1;
+    
+    while(1){
+        asm("NOP");
+        asm("CLRWDT");
+        //CheckButtons();
+        __delay_ms(250);        
+    }
+}
+
+void interrupt IRS(void){
+    if(INTCONbits.TMR0IF){
+        INTCONbits.TMR0IF=0;
+        
+        PORTD=0xFF;
+        PORTE=demuxSelect[indexer];
+        asm("NOP");asm("NOP");
+        asm("NOP");asm("NOP");
+        
+        PORTD=demuxData[indexer];           
+         
+         indexer++;
+         if(indexer>=demuxSelectSize)indexer=0;
+    }
+    
+    if(PIR5bits.TMR4IF){
+        PIR5bits.TMR4IF=0;
+        timeStep();
     }
 }
