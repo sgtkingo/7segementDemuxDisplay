@@ -238,8 +238,7 @@ void interrupt IRS(void){
         
         PORTD=0xFF;
         PORTE=demuxSelect[indexer];
-        asm("NOP");asm("NOP");
-        asm("NOP");asm("NOP");
+        __delay_us(100);
         
         PORTD=demuxData[indexer];           
          
